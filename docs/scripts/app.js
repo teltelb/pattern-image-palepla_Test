@@ -146,6 +146,8 @@ function setupInputs() {
 
   // Export
   el('exportBtn')?.addEventListener('click', () => { exportPng().catch(err => console.error('Export failed', err)); });
+  el('exportTransparentBtn')?.addEventListener('click', () => { exportPng().catch(err => console.error('Export failed', err)); });
+  el('exportCompositeBtn')?.addEventListener('click', () => { exportComposite().catch(err => console.error('Composite export failed', err)); });
 
   // Presets
   el('preset')?.addEventListener('change', (e) => { applyPreset(e.target.value); updatePreviewSize(); render(); updateDeletePresetState(); });
@@ -545,6 +547,57 @@ function concat(...arrs) { const size = arrs.reduce((a, b) => a + b.length, 0); 
 const CRC_TABLE = (() => { const table = new Uint32Array(256); for (let n = 0; n < 256; n++) { let c = n; for (let k = 0; k < 8; k++) c = (c & 1) ? (0xEDB88320 ^ (c >>> 1)) : (c >>> 1); table[n] = c >>> 0; } return table; })();
 function crc32(u8) { let c = 0xffffffff; for (let i = 0; i < u8.length; i++) c = CRC_TABLE[(c ^ u8[i]) & 0xff] ^ (c >>> 8); return (c ^ 0xffffffff) >>> 0; }
 function dataURLtoBlob(dataUrl) { const parts = dataUrl.split(','); const mime = parts[0].match(/:(.*?);/)[1] || 'image/png'; const bstr = atob(parts[1]); const n = bstr.length; const u8 = new Uint8Array(n); for (let i = 0; i < n; i++) u8[i] = bstr.charCodeAt(i); return new Blob([u8], { type: mime }); }
+
+// 背景とパターンを合成して保存（透過パターン → 背景合成）
+async function exportComposite() {
+  const { width, height, unit, dpi } = state.export;
+  const widthPx = toPx(width, unit, dpi); const heightPx = toPx(height, unit, dpi);
+  if (!Number.isFinite(widthPx) || !Number.isFinite(heightPx) || widthPx <= 0 || heightPx <= 0) { alert('出力サイズが不正です'); return; }
+  if (widthPx * heightPx > MAX_PIXELS) { alert('出力が大きすぎます。サイズまたはDPIを下げてください'); return; }
+  const list = state.images.filter(a => a && a.source); if (list.length === 0) { alert('画像を追加してください'); return; }
+
+  // 1) 透過のパターンレイヤーを作成
+  const patternCanvas = document.createElement('canvas'); patternCanvas.width = widthPx; patternCanvas.height = heightPx;
+  const pctx = patternCanvas.getContext('2d');
+  drawPattern(patternCanvas, pctx, list);
+
+  // 2) 合成キャンバス
+  const outCanvas = document.createElement('canvas'); outCanvas.width = widthPx; outCanvas.height = heightPx;
+  const ctx = outCanvas.getContext('2d');
+
+  // 背景設定の読み取り（assets/js/bgSettings.js と互換のキー）
+  let bgType = 'none'; let bgSrc = null;
+  try { const ds = document.body?.dataset || {}; if (ds.bgSetting) bgType = ds.bgSetting; if (ds.bgImageSrc) bgSrc = ds.bgImageSrc; } catch {}
+  try { if (!bgType || bgType === 'none') { const s = localStorage.getItem('bgSetting'); if (s) bgType = s; } if (!bgSrc) bgSrc = localStorage.getItem('bgImageSrc'); } catch {}
+
+  const letterbox = (bgType === 'black') ? '#000000' : '#ffffff';
+  if (bgType === 'white' || bgType === 'black') {
+    ctx.fillStyle = letterbox; ctx.fillRect(0, 0, widthPx, heightPx);
+  } else if (bgType === 'image' && bgSrc) {
+    await new Promise((resolve) => {
+      const im = new Image();
+      im.onload = () => {
+        try {
+          ctx.fillStyle = letterbox; ctx.fillRect(0, 0, widthPx, heightPx);
+          const ratio = im.naturalWidth / im.naturalHeight; const dh = heightPx; const dw = dh * ratio; const dx = Math.round((widthPx - dw) / 2);
+          ctx.drawImage(im, 0, 0, im.naturalWidth, im.naturalHeight, dx, 0, Math.round(dw), dh);
+        } catch {}
+        resolve();
+      };
+      im.onerror = () => resolve();
+      try { const a = document.createElement('a'); a.href = bgSrc; im.src = a.href; } catch { im.src = bgSrc; }
+    });
+  }
+
+  // パターン（透過）を上に合成
+  ctx.drawImage(patternCanvas, 0, 0);
+
+  let blob = await new Promise((res) => outCanvas.toBlob(res, 'image/png'));
+  if (!blob) { const dataUrl = outCanvas.toDataURL('image/png'); blob = dataURLtoBlob(dataUrl); }
+  const patched = await writePngDpi(blob, dpi).catch(() => blob);
+  const filename = `pattern_composite_${widthPx}x${heightPx}_${dpi}dpi.png`;
+  const url = URL.createObjectURL(patched); triggerDownload(url, filename); setTimeout(() => { try { URL.revokeObjectURL(url); } catch {} }, 1000);
+}
 
 function updatePreviewSize(force = false) {
   const c = el('preview'); const { width, height, unit, dpi } = state.export;
