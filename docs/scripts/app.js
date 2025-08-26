@@ -589,6 +589,47 @@ async function exportComposite() {
     });
   }
 
+  // 背景パターン設定（patternSettings.js）を合成（中間レイヤー）
+  try {
+    let patSrc = null; let scalePct = 100, offX = 0, offY = 0;
+    try { patSrc = document.body?.dataset?.patternImageSrc || null; } catch {}
+    if (!patSrc) { try { patSrc = localStorage.getItem('patternImageSrc'); } catch {} }
+    try {
+      const ds = document.body?.dataset || {};
+      if (ds.patternScalePct) scalePct = parseFloat(ds.patternScalePct) || scalePct;
+      if (ds.patternOffsetX) offX = parseFloat(ds.patternOffsetX) || offX;
+      if (ds.patternOffsetY) offY = parseFloat(ds.patternOffsetY) || offY;
+    } catch {}
+    try {
+      const s = localStorage.getItem('patternScalePct');
+      const sx = localStorage.getItem('patternOffsetX');
+      const sy = localStorage.getItem('patternOffsetY');
+      if (s !== null) scalePct = parseFloat(s) || scalePct;
+      if (sx !== null) offX = parseFloat(sx) || offX;
+      if (sy !== null) offY = parseFloat(sy) || offY;
+    } catch {}
+    scalePct = Math.max(50, Math.min(150, scalePct));
+    if (patSrc) {
+      await new Promise((resolve) => {
+        const im = new Image();
+        im.onload = () => {
+          try {
+            const ratio = im.naturalWidth / im.naturalHeight;
+            const dh = Math.round(heightPx * (scalePct / 100));
+            const dw = Math.round(dh * ratio);
+            const dx = Math.round((widthPx - dw) / 2 + offX);
+            const dy = Math.round((heightPx - dh) / 2 + offY);
+            ctx.imageSmoothingEnabled = true; try { ctx.imageSmoothingQuality = 'high'; } catch {}
+            ctx.drawImage(im, 0, 0, im.naturalWidth, im.naturalHeight, dx, dy, dw, dh);
+          } catch {}
+          resolve();
+        };
+        im.onerror = () => resolve();
+        try { const a = document.createElement('a'); a.href = patSrc; im.src = a.href; } catch { im.src = patSrc; }
+      });
+    }
+  } catch {}
+
   // パターン（透過）を上に合成
   ctx.drawImage(patternCanvas, 0, 0);
 
