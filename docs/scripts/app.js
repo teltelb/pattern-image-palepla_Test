@@ -144,10 +144,10 @@ function setupInputs() {
   el('gridRows')?.addEventListener('input', (e) => { state.grid.rows = clampInt(e.target.value, 1, 50, state.grid.rows); render(); });
   el('rectCells')?.addEventListener('change', (e) => { state.options.rectCells = !!e.target.checked; render(); });
 
-  // Export
-  el('exportBtn')?.addEventListener('click', () => { exportPng().catch(err => console.error('Export failed', err)); });
-  el('exportTransparentBtn')?.addEventListener('click', () => { exportPng().catch(err => console.error('Export failed', err)); });
-  el('exportCompositeBtn')?.addEventListener('click', () => { exportComposite().catch(err => console.error('Composite export failed', err)); });
+  // Export (capture phase to避ける: 他スクリプトのクリック捕捉)
+  el('exportBtn')?.addEventListener('click', (e) => { try { e.preventDefault(); e.stopImmediatePropagation(); } catch {} exportPng().catch(err => console.error('Export failed', err)); }, { capture: true });
+  el('exportTransparentBtn')?.addEventListener('click', (e) => { try { e.preventDefault(); e.stopImmediatePropagation(); } catch {} exportPng().catch(err => console.error('Export failed', err)); }, { capture: true });
+  el('exportCompositeBtn')?.addEventListener('click', (e) => { try { e.preventDefault(); e.stopImmediatePropagation(); } catch {} exportComposite().catch(err => console.error('Composite export failed', err)); }, { capture: true });
 
   // Presets
   el('preset')?.addEventListener('change', (e) => { applyPreset(e.target.value); updatePreviewSize(); render(); updateDeletePresetState(); });
